@@ -196,7 +196,7 @@ class GameRoom extends Room {
     p.bestStreak = Math.max(p.bestStreak, p.streak)
     profiles.addQuestEvent(p, 'play', 1, now)
     profiles.addQuestEvent(p, 'win', 1, now)
-    if (guesses <= 3) profiles.addQuestEvent(p, 'quickwin', 1, now)
+    if (guesses <= DATA.quickWinGuesses) profiles.addQuestEvent(p, 'quickwin', 1, now)
     if (p.streak >= 3) profiles.addQuestEvent(p, 'streak3', 1, now)
 
     // Win-streak milestones pay a bonus, announced to the whole server.

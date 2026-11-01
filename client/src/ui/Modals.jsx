@@ -546,10 +546,10 @@ function QuestsModal({ profile }) {
 
 const HELP_STEPS = [
   ['🚶', 'Walk to a table', 'Use WASD (or the joystick on phones). Walk up to a table and press E (or tap "Play").'],
-  ['🤔', 'Pick a secret number', 'When a second player sits down, you both pick a number from 1 to 100. Keep it secret!'],
-  ['🎯', 'Take turns guessing', "Guess your opponent's number. After each guess you see HIGHER ⬆ or LOWER ⬇. Wrong numbers get crossed out."],
-  ['🏆', 'First to guess wins', `Guess right first to win $${DATA.winReward}. Even if you lose, you get $${DATA.lossReward} and XP for playing.`],
-  ['❓', 'Need help?', `Use a Hint ($${DATA.powers.hint}) to narrow it down, or Reveal ($${DATA.powers.reveal}) to see their number.`],
+  ['🔒', 'Set a secret code', `When a second player sits down, you both pick a ${DATA.codeLength}-digit code. Keep it secret!`],
+  ['🎯', 'Take turns cracking', "Type a full code for your opponent's. Right digits turn GREEN and stay locked in. Wrong digits turn RED and get struck off the keypad for that spot."],
+  ['🏆', 'First to crack it wins', `Get every digit right first to win $${DATA.winReward}. Even if you lose, you get $${DATA.lossReward} and XP for playing.`],
+  ['🔓', 'Need help?', `Reveal a Digit ($${DATA.powers.hint}) cracks one digit for you, or X-Ray ($${DATA.powers.reveal}) shows their whole code.`],
   ['⭐', 'Level up', 'Every duel gives XP. Each new level pays cash, and some unlock cool titles for your name.'],
   ['📜', 'Quests & gifts', 'Finish 3 daily quests, open a free gift every 10 minutes, and claim your daily reward.'],
   ['🛍️', 'Spend your cash', 'Buy chairs and thrones, glowing auras, titles and emotes in the Shop. Show them off!'],

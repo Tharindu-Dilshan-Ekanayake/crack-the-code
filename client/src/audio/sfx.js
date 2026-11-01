@@ -286,18 +286,30 @@ export const sfx = {
       thump(t, 150 + i * 6, 0.05 + i * 0.012)
     }
   }),
-  /** Answer: HIGHER, a rising "whoop" and an upward chime. */
-  higher: play(() => {
-    voice(330, 0, 0.28, { type: 'triangle', glide: 880, gain: 0.16, filter: 2500 })
-    bell(C6, 0.2, 0.4, 0.14)
-    bell(G6, 0.3, 0.7, 0.15)
+  /** Keypad press: a short, clicky key. */
+  key: play(() => {
+    voice(1250, 0, 0.04, { type: 'square', filter: 3200, gain: 0.05, glide: 1000 })
+    noise(0, 0.02, { freq: 5000, q: 2, gain: 0.05 })
   }),
-  /** Answer: LOWER, a falling "whoop" and a downward chime. */
-  lower: play(() => {
-    voice(880, 0, 0.28, { type: 'triangle', glide: 300, gain: 0.16, filter: 2500 })
-    bell(G5, 0.2, 0.4, 0.14)
-    bell(C5, 0.3, 0.7, 0.15)
-  }),
+  /**
+   * A guess's digits flipping over one by one (in step with the tiles): a rising
+   * chime for each right digit, a dull knock for each wrong one.
+   * @param {string} hits e.g. '110100'
+   * @param {number} step seconds between tiles
+   */
+  flips: (hits, step) => {
+    if (!ready()) return
+    let right = 0
+    for (let p = 0; p < hits.length; p += 1) {
+      const t = 0.12 + p * step
+      if (hits[p] === '1') {
+        bell(NOTE(10 + right * 2), t, 0.4, 0.14)
+        right += 1
+      } else {
+        thump(t, 120, 0.12)
+      }
+    }
+  },
   /** Won the duel: a fanfare, a big chord and a cymbal shimmer. */
   win: play(() => {
     ;[C5, E5, G5].forEach((f, i) => voice(f, i * 0.11, 0.18, { type: 'square', filter: 2200, gain: 0.09 }))
