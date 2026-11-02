@@ -260,6 +260,22 @@ class GameRoom extends Room {
   }
 
   /**
+   * A player quit a duel under way: they pay the winner DATA.forfeitPenalty, or
+   * whatever cash they have if it is less (never below $0). Returns the amount paid.
+   */
+  payForfeit(loser, winner, now) {
+    const amount = Math.min(DATA.forfeitPenalty, Math.max(0, loser.profile.cash))
+    if (amount <= 0) return 0
+    loser.profile.cash -= amount
+    profiles.markDirty(loser.profile)
+    loser.pushProfile(now)
+    winner.profile.cash += amount
+    profiles.markDirty(winner.profile)
+    winner.pushProfile(now)
+    return amount
+  }
+
+  /**
    * A lost duel still pays a little (and XP), so every game moves you forward.
    * Quitting or timing out pays nothing. Returns the cash given.
    */

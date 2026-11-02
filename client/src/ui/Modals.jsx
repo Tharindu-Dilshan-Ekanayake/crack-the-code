@@ -549,7 +549,7 @@ const HELP_STEPS = [
   ['🔒', 'Set a secret code', `When a second player sits down, you both pick a ${DATA.codeLength}-digit code. Keep it secret!`],
   ['🎯', 'Take turns cracking', "Type a full code for your opponent's. Right digits turn GREEN and stay locked in. Wrong digits turn RED and get struck off the keypad for that spot."],
   ['🏆', 'First to crack it wins', `Get every digit right first to win $${DATA.winReward}. Even if you lose, you get $${DATA.lossReward} and XP for playing.`],
-  ['🔓', 'Need help?', `Reveal a Digit ($${DATA.powers.hint}) cracks one digit for you, or X-Ray ($${DATA.powers.reveal}) shows their whole code.`],
+  ['🔓', 'Need help?', `Reveal Digit ($${DATA.powers.hint}) cracks one of their digits for you. You can use it once per match.`],
   ['⭐', 'Level up', 'Every duel gives XP. Each new level pays cash, and some unlock cool titles for your name.'],
   ['📜', 'Quests & gifts', 'Finish 3 daily quests, open a free gift every 10 minutes, and claim your daily reward.'],
   ['🛍️', 'Spend your cash', 'Buy chairs and thrones, glowing auras, titles and emotes in the Shop. Show them off!'],

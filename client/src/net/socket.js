@@ -462,7 +462,7 @@ function playToastSound(text) {
   if (/not enough|need \$|busy|full|walk closer|already|too slow|out of time/i.test(text)) sfx.error()
   else if (/bought|unlocked|claimed/i.test(text)) sfx.buy()
   else if (/quest complete|gift|reward|streak/i.test(text)) sfx.reward()
-  else if (/digit \d is|their code is/i.test(text)) sfx.turn()
+  else if (/digit \d is/i.test(text)) sfx.turn()
 }
 
 const handlers = {
@@ -488,7 +488,8 @@ const handlers = {
       if (next.phase === 'choosing' && prev.phase !== 'choosing') sfx.go()
       if (next.myTurn && !prev.myTurn) sfx.turn()
     }
-    useGame.setState({ match: next })
+    // A "Quit the duel?" dialog only makes sense while that duel is being played.
+    useGame.setState({ match: next, ...(next?.phase !== 'guessing' && { quitConfirm: false }) })
   },
 
   /** Lost a duel: back to the lobby spawn point, visible again. */
@@ -568,6 +569,8 @@ const handlers = {
         result: {
           win,
           reward: win ? msg.reward : msg.consolation || 0,
+          /** Cash the quitter paid the winner. */
+          forfeit: msg.forfeit || 0,
           theirCode: msg.codes[1 - mySeat],
           reason: msg.reason,
           until: now + 3800,

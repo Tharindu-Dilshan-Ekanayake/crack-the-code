@@ -28,14 +28,15 @@ function Banner({ children, className = '' }) {
   )
 }
 
-function LeaveButton({ label = 'Leave', forfeit = false }) {
+/** Stands up from the table; `onClick` replaces that (e.g. to ask first). */
+function LeaveButton({ label = 'Leave', onClick }) {
   return (
     <button
       type="button"
       onClick={() => {
-        if (forfeit && !window.confirm('Leaving now counts as a loss. Leave anyway?')) return
         sfx.click()
-        send({ t: 'leave' })
+        if (onClick) onClick()
+        else send({ t: 'leave' })
       }}
       className="btn-3d press pointer-events-auto bg-gradient-to-b from-[#ff5a5a] to-[#d81f1f] px-4 py-1.5 text-base font-bold text-white"
     >
@@ -44,7 +45,73 @@ function LeaveButton({ label = 'Leave', forfeit = false }) {
   )
 }
 
-function PowerButton({ icon, label, price, disabled, onClick }) {
+/**
+ * "Quit the duel?" in the middle of the screen, instead of the browser's confirm
+ * box. Quitting a duel under way hands the opponent the win and pays them
+ * DATA.forfeitPenalty (or all your cash, if you have less).
+ */
+function QuitDialog() {
+  const cash = useGame((s) => s.profile?.cash ?? 0)
+  const fee = Math.min(DATA.forfeitPenalty, Math.max(0, cash))
+  const cancel = () => {
+    sfx.click()
+    useGame.setState({ quitConfirm: false })
+  }
+  const quit = () => {
+    sfx.click()
+    useGame.setState({ quitConfirm: false })
+    send({ t: 'leave' })
+  }
+
+  return (
+    <div
+      className="fade-in pointer-events-auto absolute inset-0 z-50 flex items-center justify-center bg-black/55"
+      onClick={cancel}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="quit-title"
+        className="ui-panel pop-in flex w-[min(90vw,23rem)] flex-col items-center gap-3 px-5 pb-5 pt-4 text-center"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="wiggle text-[3.2rem] leading-none">🏳️</div>
+        <h2 id="quit-title" className="stroke-text text-[2rem] font-bold leading-none text-white">
+          Quit the duel?
+        </h2>
+        <p className="text-base font-semibold leading-snug text-white/85">
+          Your opponent wins this duel
+          {fee > 0 ? (
+            <>
+              {' '}
+              and you pay them <span className="stroke-thin font-bold text-[#ff6b6b]">{money(fee)}</span>
+            </>
+          ) : null}
+          .
+        </p>
+        <div className="mt-1 flex w-full gap-2">
+          <button
+            type="button"
+            autoFocus
+            onClick={cancel}
+            className="btn-3d press flex-1 bg-gradient-to-b from-[#5dff7a] to-[#18b84a] px-2 py-2 text-lg font-bold text-white"
+          >
+            <span className="stroke-text">Keep playing</span>
+          </button>
+          <button
+            type="button"
+            onClick={quit}
+            className="btn-3d press flex-1 bg-gradient-to-b from-[#ff5a5a] to-[#d81f1f] px-2 py-2 text-lg font-bold text-white"
+          >
+            <span className="stroke-text">{fee > 0 ? `Quit −${money(fee)}` : 'Quit'}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PowerButton({ icon, label, price, note, disabled, onClick }) {
   return (
     <button
       type="button"
@@ -55,7 +122,7 @@ function PowerButton({ icon, label, price, disabled, onClick }) {
       <span className="text-2xl leading-none">{icon}</span>
       <span className="flex flex-col items-start leading-tight">
         <span className="stroke-thin text-sm font-bold">{label}</span>
-        <span className="stroke-thin text-xs font-bold text-[#c8ffc8]">{money(price)}</span>
+        <span className="stroke-thin text-xs font-bold text-[#c8ffc8]">{note || money(price)}</span>
       </span>
     </button>
   )
@@ -330,30 +397,23 @@ function DuelBar({ match, now }) {
   )
 }
 
-/** Paid helpers, shown under the keypad. */
-function PowerButtons({ match }) {
+/** Reveal Digit, under the keypad: cracks one unknown digit, once per match. */
+function RevealDigitButton({ match }) {
   const cash = useGame((s) => s.profile?.cash ?? 0)
-  const use = (kind) => {
-    sfx.click()
-    send({ t: 'power', kind })
-  }
-  const revealed = match.revealed != null
+  const price = DATA.powers.hint
   const open = CODE_LENGTH - crackedCount(match.known)
   return (
-    <div className="flex w-full gap-2">
+    <div className="flex w-full">
       <PowerButton
         icon="🔓"
         label="REVEAL DIGIT"
-        price={DATA.powers.hint}
-        disabled={revealed || open <= 1 || cash < DATA.powers.hint}
-        onClick={() => use('hint')}
-      />
-      <PowerButton
-        icon="🔍"
-        label="X-RAY CODE"
-        price={DATA.powers.reveal}
-        disabled={revealed || cash < DATA.powers.reveal}
-        onClick={() => use('reveal')}
+        price={price}
+        note={match.hintUsed ? 'USED THIS MATCH' : `${money(price)} · once per match`}
+        disabled={match.hintUsed || open <= 1 || cash < price}
+        onClick={() => {
+          sfx.click()
+          send({ t: 'power', kind: 'hint' })
+        }}
       />
     </div>
   )
@@ -379,7 +439,7 @@ function CodePad({ match, mode }) {
   const { blur } = useSettings()
   const now = useNow(250)
   const guessing = mode === 'guess'
-  const locked = guessing ? (match.revealed ? [...match.revealed] : match.known) : NO_LOCKS
+  const locked = guessing ? match.known : NO_LOCKS
 
   const [entry, setEntry] = useState(() => Array(CODE_LENGTH).fill(null))
   const [cursor, setCursor] = useState(0)
@@ -390,7 +450,7 @@ function CodePad({ match, mode }) {
   const value = (p) => locked[p] ?? entry[p]
   // The slot that takes the next digit: the chosen one if it's open, else the next empty one.
   const at = cursor >= 0 && isOpen(cursor) ? cursor : findSlot(Math.max(0, cursor), (p) => isOpen(p) && entry[p] == null)
-  const ruledOut = guessing && !match.revealed && at >= 0 ? match.missed[at] : ''
+  const ruledOut = guessing && at >= 0 ? match.missed[at] : ''
   const complete = SLOTS.every((p) => value(p) != null)
 
   const nope = () => {
@@ -463,7 +523,6 @@ function CodePad({ match, mode }) {
   const cracked = crackedCount(match.known)
   let subtitle
   if (!guessing) subtitle = 'Pick 6 digits. Your opponent will try to crack it!'
-  else if (match.revealed) subtitle = 'X-Ray: you can see their code! 👀'
   else if (cracked) subtitle = `${cracked} of ${CODE_LENGTH} digits cracked. Keep going!`
   else subtitle = 'Green digits stay locked in. Red keys are ruled out.'
 
@@ -533,7 +592,7 @@ function CodePad({ match, mode }) {
           )}
           {guessing && (
             <div className="w-full [@media(max-height:520px)]:mt-auto">
-              <PowerButtons match={match} />
+              <RevealDigitButton match={match} />
             </div>
           )}
         </div>
@@ -666,11 +725,25 @@ function ResultBanner() {
   }, [result])
 
   if (!result || result.until < now) return null
-  const subtitle = result.win
-    ? `+${money(result.reward)} 💵`
-    : result.reason === 'forfeit' || result.reason === 'afk'
-      ? 'You left the duel'
-      : `Their code was ${result.theirCode}${result.reward ? `  ·  +${money(result.reward)} for playing` : ''}`
+  const quit = result.reason === 'forfeit'
+  const afk = result.reason === 'afk'
+  let title
+  let subtitle
+  if (result.win) {
+    title = quit ? 'THEY QUIT! 🏆' : afk ? 'THEY TIMED OUT 🏆' : 'CODE CRACKED! 🏆'
+    subtitle = [`+${money(result.reward)} 💵`, result.forfeit ? `+${money(result.forfeit)} from the quitter` : '']
+      .filter(Boolean)
+      .join('  ·  ')
+  } else if (quit) {
+    title = 'YOU QUIT 🏳️'
+    subtitle = result.forfeit ? `−${money(result.forfeit)} paid to your opponent` : 'Your opponent wins'
+  } else if (afk) {
+    title = 'TIMED OUT ⏰'
+    subtitle = 'Too slow twice: your opponent wins'
+  } else {
+    title = 'YOU GOT CRACKED 💀'
+    subtitle = `Their code was ${result.theirCode}${result.reward ? `  ·  +${money(result.reward)} for playing` : ''}`
+  }
 
   return (
     <Banner className="top-[30%]">
@@ -678,7 +751,7 @@ function ResultBanner() {
         <div
           className={`stroke-text text-[3.6rem] font-bold leading-none ${result.win ? 'text-[#ffe23d]' : 'text-[#ff4040]'}`}
         >
-          {result.win ? 'CODE CRACKED! 🏆' : 'YOU GOT CRACKED 💀'}
+          {title}
         </div>
         <div className="stroke-text mt-2 text-2xl font-bold text-white">{subtitle}</div>
       </div>
@@ -690,6 +763,7 @@ function ResultBanner() {
 export function MatchUI() {
   const match = useGame((s) => s.match)
   const reveal = useGame((s) => s.reveal)
+  const quitConfirm = useGame((s) => s.quitConfirm)
   const now = useNow(150)
 
   // A wood-block tick on each second of the "Starting in 3, 2, 1" countdown.
@@ -698,9 +772,10 @@ export function MatchUI() {
     if (countdown) sfx.tick()
   }, [countdown])
   const revealing = Boolean(match && reveal && reveal.until > now)
+  const quitting = quitConfirm && match?.phase === 'guessing'
   const padOpen =
     (match?.phase === 'choosing' && match.myCode == null) ||
-    (match?.phase === 'guessing' && match.myTurn && !revealing)
+    (match?.phase === 'guessing' && match.myTurn && !revealing && !quitting)
 
   return (
     <>
@@ -735,16 +810,17 @@ export function MatchUI() {
         <>
           {revealing ? (
             <RevealCard reveal={reveal} />
-          ) : match.myTurn ? (
+          ) : padOpen ? (
             <CodePad match={match} mode="guess" />
           ) : (
             <DefensePanel match={match} />
           )}
           {!padOpen && (
             <div className="pointer-events-none absolute bottom-3 right-3 z-40">
-              <LeaveButton label="Quit duel" forfeit />
+              <LeaveButton label="Quit duel" onClick={() => useGame.setState({ quitConfirm: true })} />
             </div>
           )}
+          {quitting && <QuitDialog />}
         </>
       )}
 

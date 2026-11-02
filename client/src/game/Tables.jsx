@@ -332,7 +332,7 @@ function useCardTexture(label, text, color) {
 
 /**
  * The two code cards at the player's own table: their code on their card, and on
- * the opponent's the digits cracked so far ("12?5?0"), or all of it once X-rayed. Nobody else's cards show anything,
+ * the opponent's the digits cracked so far ("12?5?0"). Nobody else's cards show anything,
  * so this is never more than two extra draw calls.
  */
 function SeatPapers() {
@@ -340,10 +340,9 @@ function SeatPapers() {
   const playing = match && match.phase !== 'waiting' && match.phase !== 'countdown'
 
   const mine = playing && match.myCode != null ? match.myCode : ''
-  const theirs =
-    playing && match.phase !== 'choosing' ? (match.revealed ?? match.known.map((d) => d ?? '?').join('')) : ''
+  const theirs = playing && match.phase !== 'choosing' ? match.known.map((d) => d ?? '?').join('') : ''
   const myTex = useCardTexture('YOUR CODE', mine, '#1d4ed8')
-  const theirTex = useCardTexture('THEIR CODE', theirs, match?.revealed != null ? '#7c3aed' : '#dc2626')
+  const theirTex = useCardTexture('THEIR CODE', theirs, '#dc2626')
 
   // On the front face of the card, a hair in front of it.
   const geometry = useDisposable(

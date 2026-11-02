@@ -23,9 +23,8 @@ const maskOf = (known) => known.map((d) => d ?? '_').join('')
  *               ones are struck off for that slot
  *   ended     - result on screen; both players are stood up when it runs out
  *
- * The server holds both secrets. A client only ever learns its own code, which of the
- * opponent's digits it has cracked (and which it has ruled out per slot), and the
- * opponent's whole code if it paid to reveal it.
+ * The server holds both secrets. A client only ever learns its own code, and which
+ * of the opponent's digits it has cracked (and which it has ruled out per slot).
  */
 class Table {
   /**
@@ -60,7 +59,8 @@ class Table {
     this.turn = 0
     /** Seat index of the winner once the duel has ended, else -1. */
     this.winner = -1
-    this.revealed = [false, false]
+    /** Whether each seat has used its one Reveal Digit this match. */
+    this.hintUsed = [false, false]
     this.timeouts = [0, 0]
     /** True between a guess and its answer, so a second guess can't sneak in. */
     this.pending = false
@@ -187,29 +187,27 @@ class Table {
     this.seats.forEach((s, i) => s?.send('duel', { t, mine: i === by, ...rest }))
   }
 
-  /** Paid power-ups. Returns an error string, or null on success. */
+  /**
+   * Paid power-ups. The only one is Reveal Digit ('hint'): it cracks one random
+   * digit that is still unknown, once per player per match. Returns an error
+   * string, or null on success.
+   */
   power(session, kind, now) {
     const i = this.seatOf(session)
     if (i < 0 || this.phase !== 'guessing') return 'Power-ups work during guessing'
     const cost = DATA.powers[kind]
     if (cost === undefined) return 'Unknown power-up'
+    if (this.hintUsed[i]) return 'Reveal Digit is once per match'
     if (session.profile.cash < cost) return `You need $${cost}`
 
-    if (kind === 'hint') {
-      // Reveal Digit: cracks one random slot that is still unknown.
-      if (this.revealed[i]) return 'You already see their code!'
-      const open = []
-      this.known[i].forEach((d, p) => d === null && open.push(p))
-      if (open.length <= 1) return 'Only one digit left, you got this!'
-      const p = open[randomInt(0, open.length - 1)]
-      this.known[i][p] = this.secrets[1 - i][p]
-      session.toast(`Digit ${p + 1} is ${this.known[i][p]} 🔓`)
-    } else if (kind === 'reveal') {
-      if (this.revealed[i]) return 'Already revealed'
-      this.revealed[i] = true
-      session.toast(`Their code is ${this.secrets[1 - i]} 👀`)
-    }
-    if (kind === 'hint') this.room.questEvent(session, 'hint', now)
+    const open = []
+    this.known[i].forEach((d, p) => d === null && open.push(p))
+    if (open.length <= 1) return 'Only one digit left, you got this!'
+    const p = open[randomInt(0, open.length - 1)]
+    this.known[i][p] = this.secrets[1 - i][p]
+    this.hintUsed[i] = true
+    session.toast(`Digit ${p + 1} is ${this.known[i][p]} 🔓`)
+    this.room.questEvent(session, 'hint', now)
 
     session.profile.cash -= cost
     session.pushProfile(now)
@@ -249,7 +247,9 @@ class Table {
     if (winner) reward = this.room.recordWin(winner, this.guesses[w], now)
     let consolation = 0
     if (loser) consolation = this.room.recordLoss(loser, now, reason)
-    if (loser) this.room.bubble(loser, 'NOOO! 💀')
+    // Quitting a duel under way (or disconnecting for good) pays the opponent.
+    const forfeit = reason === 'forfeit' && loser && winner ? this.room.payForfeit(loser, winner, now) : 0
+    if (loser) this.room.bubble(loser, reason === 'forfeit' ? 'I quit 🏳️' : 'NOOO! 💀')
     if (winner) this.room.bubble(winner, reason === 'forfeit' ? 'GG 👍' : 'Got it! 😎')
 
     this.room.broadcast('result', {
@@ -259,6 +259,8 @@ class Table {
       codes: [...this.secrets],
       reward,
       consolation,
+      /** Cash the quitter paid the winner (reason 'forfeit'). */
+      forfeit,
       reason,
     })
     this.sync(now)
@@ -329,7 +331,7 @@ class Table {
       myHistory: this.history[i],
       theirHistory: this.history[o],
       won: this.phase === 'ended' && this.winner === i,
-      revealed: this.revealed[i] ? this.secrets[o] : null,
+      hintUsed: this.hintUsed[i],
       opponent: this.seats[o]?.id ?? null,
       opponentReady: this.secrets[o] !== null,
     }
