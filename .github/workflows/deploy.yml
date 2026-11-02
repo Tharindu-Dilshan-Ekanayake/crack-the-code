@@ -7,7 +7,8 @@
 # Repository setup:
 #   secrets.LEGION_DEPLOY_TOKEN        deploy token from hosting.bloxity.io
 #   secrets.LEGION_DEPLOY_TOKEN_STAGE  (optional) deploy token from hosting.stage.bloxity.io
-#   vars.BLOXITY_GAME_ID               the hosting game id (same on prod and stage)
+#   vars.BLOXITY_GAME_ID               (optional) the hosting game id (same on prod and
+#                                      stage); defaults to crack-the-code
 #
 # The client build bakes in no environment, API URL or domain: the platform tells
 # the game where it is at runtime.
@@ -50,7 +51,7 @@ jobs:
       matrix:
         target: ${{ fromJSON(needs.targets.outputs.list) }}
     env:
-      GAME_ID: ${{ vars.BLOXITY_GAME_ID }}
+      GAME_ID: ${{ vars.BLOXITY_GAME_ID || 'crack-the-code' }}
       CHANNEL: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
       API_URL: ${{ matrix.target == 'staging' && 'https://api.stage.bloxity.io' || 'https://api.bloxity.io' }}
       LEGION_URL: ${{ matrix.target == 'staging' && 'https://legion.stage.bloxity.io' || 'https://legion.bloxity.io' }}
@@ -108,7 +109,7 @@ jobs:
       - name: Build client
         working-directory: client
         env:
-          VITE_BLOXITY_HOSTING_ID: ${{ vars.BLOXITY_GAME_ID }}
+          VITE_BLOXITY_HOSTING_ID: ${{ env.GAME_ID }}
         run: npm ci && npm run build
       - name: Upload client
         run: |

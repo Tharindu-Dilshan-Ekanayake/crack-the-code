@@ -1,5 +1,5 @@
 ---
-gameSlug: guess-my-number
+gameSlug: crack-the-code
 clientDir: client
 buildCommand: npm ci && npm run build
 distDir: client/dist

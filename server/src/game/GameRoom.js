@@ -21,6 +21,8 @@ const REPLACED = 4100
 
 /** profile id -> live session, across every room in this process. */
 const liveByProfile = new Map()
+/** Every room open in this process, for the shutdown drain. */
+const liveRooms = new Set()
 
 /**
  * One game server: up to 20 players sharing the island and its ten tables.
@@ -39,6 +41,9 @@ class GameRoom extends Room {
     /** session id -> Session, including players mid-reconnect. */
     this.sessions = new Map()
     this.lastBoard = ''
+    /** Set while this pod shuts down: no new duels start (see GameRoom.drain). */
+    this.draining = false
+    liveRooms.add(this)
 
     this.tables = DATA.tables.map((def) => {
       const state = new TableState()
@@ -123,6 +128,28 @@ class GameRoom extends Room {
     this.sessions.delete(client.sessionId)
     this.state.players.delete(client.sessionId)
     if (liveByProfile.get(session.profile.id) === session) liveByProfile.delete(session.profile.id)
+  }
+
+  onDispose() {
+    liveRooms.delete(this)
+  }
+
+  /**
+   * The pod is shutting down: stop seating new duels in every room and tell
+   * everyone. Duels already under way play on (see duelsInProgress).
+   */
+  static drain() {
+    for (const room of liveRooms) {
+      room.draining = true
+      room.broadcast('toast', { text: '🔧 Server update! Finish your duel, then you move to a fresh server' })
+    }
+  }
+
+  /** Tables in this process with a duel counting down, being played, or showing its result. */
+  static duelsInProgress() {
+    let count = 0
+    for (const room of liveRooms) for (const table of room.tables) if (table.phase !== 'waiting') count += 1
+    return count
   }
 
   onUncaughtException(error, methodName) {
