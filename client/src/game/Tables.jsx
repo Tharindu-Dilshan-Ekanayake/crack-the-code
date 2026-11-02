@@ -30,7 +30,7 @@ import { useDisposable } from './useDisposable'
 const EMPTY_CHAIR = '#6b4329'
 const EMPTY_CUSHION = '#e9dcc3'
 const PAPER_Y = TABLE.height + 0.001
-/** Where a number card stands on the table, relative to the table's centre. */
+/** Where a code card stands on the table, relative to the table's centre. */
 const CARD_Z = -0.47
 const CARD_W = 0.46
 const CARD_H = 0.4
@@ -266,7 +266,7 @@ function TableLabel({ table }) {
 }
 
 /**
- * The face of a number card: a small label and a big, dark number, drawn on a
+ * The face of a code card: a small label and a big, dark code, drawn on a
  * transparent canvas over the white card. Sized and filtered to stay crisp at the
  * duel camera's angle even at 1x resolution (LOW).
  */
@@ -305,16 +305,18 @@ function useCardTexture(label, text, color) {
       ctx.fillText(label, w / 2, 29)
 
       if (text) {
-        const size = text.length > 2 ? 108 : 132
+        // As big as fits the card's width.
+        ctx.font = `700 100px ${GAME_FONT}`
+        const size = Math.min(132, Math.floor((100 * (w - 28)) / ctx.measureText(text).width))
         ctx.font = `700 ${size}px ${GAME_FONT}`
-        // A soft light halo, then the number in a strong dark colour.
+        // A soft light halo, then the code in a strong dark colour.
         ctx.lineWidth = 12
         ctx.strokeStyle = '#ffffff'
         ctx.strokeText(text, w / 2, h * 0.6)
         ctx.fillStyle = color
         ctx.fillText(text, w / 2, h * 0.6)
       }
-      // Underline, like a number written on a form.
+      // Underline, like a code written on a form.
       ctx.fillStyle = '#c9ccd3'
       ctx.fillRect(40, h - 22, w - 80, 5)
       tex.needsUpdate = true
@@ -329,18 +331,18 @@ function useCardTexture(label, text, color) {
 }
 
 /**
- * The two number cards at the player's own table: their number on their card, "?"
- * (or the revealed number) on the opponent's. Nobody else's cards show anything,
+ * The two code cards at the player's own table: their code on their card, and on
+ * the opponent's the digits cracked so far ("12?5?0"). Nobody else's cards show anything,
  * so this is never more than two extra draw calls.
  */
 function SeatPapers() {
   const match = useGame((s) => s.match)
   const playing = match && match.phase !== 'waiting' && match.phase !== 'countdown'
 
-  const mine = playing && match.myNumber != null ? String(match.myNumber) : ''
-  const theirs = playing && match.phase !== 'choosing' ? String(match.revealed ?? '?') : ''
-  const myTex = useCardTexture('YOUR NUMBER', mine, '#1d4ed8')
-  const theirTex = useCardTexture('THEIR NUMBER', theirs, match?.revealed != null ? '#7c3aed' : '#dc2626')
+  const mine = playing && match.myCode != null ? match.myCode : ''
+  const theirs = playing && match.phase !== 'choosing' ? match.known.map((d) => d ?? '?').join('') : ''
+  const myTex = useCardTexture('YOUR CODE', mine, '#1d4ed8')
+  const theirTex = useCardTexture('THEIR CODE', theirs, '#dc2626')
 
   // On the front face of the card, a hair in front of it.
   const geometry = useDisposable(

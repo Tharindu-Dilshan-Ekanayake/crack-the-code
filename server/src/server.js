@@ -143,16 +143,50 @@ const gameServer = new Server({
   }),
   express: configureApp,
   greet: false,
+  // Signals are handled below, so a deploy can drain instead of closing at once.
+  gracefullyShutdown: false,
 })
 
 // NOTE: like /api/legion-auth above, the game trusts the Bloxity user id the client
 // sends when joining (see Session.resolveIdentity). Verify the Bloxity token there
 // before real money or leaderboards depend on it.
 gameServer.define(DATA.bloxity.roomName, GameRoom)
-// Colyseus owns SIGINT/SIGTERM: it lets every room run onLeave (which banks
-// progress) before this final save.
+// Colyseus' shutdown lets every room run onLeave (which banks progress) before
+// this final save.
 gameServer.onShutdown(async () => {
   await Promise.all([profiles.flushNow(), flushScores()])
+})
+
+/** Bloxity waits up to 10 minutes after SIGTERM; leave a margin for the final save. */
+const DRAIN_LIMIT_MS = 9 * 60 * 1000
+let shuttingDown = false
+
+/**
+ * Deploys and scale-downs send SIGTERM. Instead of dropping everyone at once, the
+ * pod drains: no new duels start, the ones being played finish (the matchmaker
+ * already sends new players to the new pod), then the rooms close and every
+ * client rejoins through the matchmaker onto the new pod.
+ */
+async function shutdown({ drain, err } = {}) {
+  if (shuttingDown) return
+  shuttingDown = true
+  if (drain) {
+    GameRoom.drain()
+    const deadline = Date.now() + DRAIN_LIMIT_MS
+    console.log(`[server] draining ${GameRoom.duelsInProgress()} duel(s) before shutdown`)
+    while (GameRoom.duelsInProgress() > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+    }
+  }
+  await gameServer.gracefullyShutdown(true, err)
+}
+process.once('SIGTERM', () => void shutdown({ drain: true }))
+// Ctrl+C and nodemon restarts (local dev) stop straight away.
+process.once('SIGINT', () => void shutdown())
+process.once('SIGUSR2', () => void shutdown())
+process.on('uncaughtException', (err) => {
+  console.error('[server] uncaught exception:', err)
+  void shutdown({ err })
 })
 
 profiles

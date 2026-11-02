@@ -1,11 +1,15 @@
 const DATA = require('./data')
 
-const MIN = DATA.numberMin
-const MAX = DATA.numberMax
+const LEN = DATA.codeLength
 const T = DATA.timing
+const CODE_RE = new RegExp(`^\\d{${LEN}}$`)
+const ALL_HITS = '1'.repeat(LEN)
 
 const randomInt = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1))
-const isValidNumber = (n) => Number.isInteger(n) && n >= MIN && n <= MAX
+const randomCode = () => Array.from({ length: LEN }, () => randomInt(0, 9)).join('')
+const isValidCode = (c) => typeof c === 'string' && CODE_RE.test(c)
+/** "12_5_0": the digits cracked so far, blanks for the rest. */
+const maskOf = (known) => known.map((d) => d ?? '_').join('')
 
 /**
  * One two-seat table and the duel played at it.
@@ -13,14 +17,14 @@ const isValidNumber = (n) => Number.isInteger(n) && n >= MIN && n <= MAX
  * Phases:
  *   waiting   - zero or one player seated
  *   countdown - both seats filled, "Starting in 3..."
- *   choosing  - each player secretly picks 1-100
- *   guessing  - players take turns guessing the other's number; the server answers
- *               "Higher" / "Lower" on the opponent's behalf
+ *   choosing  - each player secretly picks a 6-digit code (repeats allowed)
+ *   guessing  - players take turns entering a full code for the other's; the server
+ *               marks each digit right or wrong. Right digits stay locked in, wrong
+ *               ones are struck off for that slot
  *   ended     - result on screen; both players are stood up when it runs out
  *
- * The server holds both secrets. A client only ever learns its own number, the range
- * its guesses have narrowed the opponent's down to, and the opponent's number if it
- * paid to reveal it.
+ * The server holds both secrets. A client only ever learns its own code, and which
+ * of the opponent's digits it has cracked (and which it has ruled out per slot).
  */
 class Table {
   /**
@@ -43,19 +47,20 @@ class Table {
   reset() {
     this.phase = 'waiting'
     this.endsAt = 0
+    /** Each seat's code as a digit string, e.g. '127349'. */
     this.secrets = [null, null]
-    /** ranges[i] = what seat i has narrowed seat (1-i)'s number down to. */
-    this.ranges = [
-      [MIN, MAX],
-      [MIN, MAX],
-    ]
+    /** known[i][p] = the digit seat i has cracked at slot p of seat (1-i)'s code, else null. */
+    this.known = [Array(LEN).fill(null), Array(LEN).fill(null)]
+    /** missed[i][p] = digits seat i has tried at slot p and been told are wrong, e.g. '38'. */
+    this.missed = [Array(LEN).fill(''), Array(LEN).fill('')]
     this.guesses = [0, 0]
-    /** history[i] = seat i's guesses so far: [{ n, answer: 'higher'|'lower'|'correct' }]. */
+    /** history[i] = seat i's guesses so far: [{ code, hits }], hits like '110100' (1 = right digit). */
     this.history = [[], []]
     this.turn = 0
     /** Seat index of the winner once the duel has ended, else -1. */
     this.winner = -1
-    this.revealed = [false, false]
+    /** Whether each seat has used its one Reveal Digit this match. */
+    this.hintUsed = [false, false]
     this.timeouts = [0, 0]
     /** True between a guess and its answer, so a second guess can't sneak in. */
     this.pending = false
@@ -68,6 +73,7 @@ class Table {
   }
 
   sit(session, now) {
+    if (this.room.draining) return 'Server is updating, duels start again in a moment'
     if (this.phase !== 'waiting') return 'This table is already playing'
     const free = this.seats.indexOf(null)
     if (free < 0) return 'This table is full'
@@ -112,58 +118,63 @@ class Table {
     session.send('match', { match: null })
   }
 
-  pick(session, n, now) {
+  pick(session, code, now) {
     const i = this.seatOf(session)
     if (i < 0 || this.phase !== 'choosing' || this.secrets[i] !== null) return
-    if (!isValidNumber(n)) return
+    if (!isValidCode(code)) return
 
-    this.secrets[i] = n
+    this.secrets[i] = code
     this.room.bubble(session, 'Ready ✅')
     if (this.secrets[1 - i] !== null) this.startGuessing(now)
     else this.sync(now)
   }
 
-  guess(session, n, now) {
+  guess(session, code, now) {
     const i = this.seatOf(session)
     if (i < 0 || this.phase !== 'guessing' || this.turn !== i || this.pending) return
-    const [lo, hi] = this.ranges[i]
-    if (!isValidNumber(n) || n < lo || n > hi) return
+    if (!isValidCode(code)) return
+    // Cracked digits are locked in: a guess has to keep them.
+    if (this.known[i].some((d, p) => d !== null && code[p] !== d)) return
 
     this.guesses[i] += 1
     this.timeouts[i] = 0
     this.pending = true
-    this.room.bubble(session, `Is your number ${n}? 🤔`)
-    // Both players see the guess land, then (after the suspense) the answer.
-    this.tell({ t: 'guessed', by: i, n })
+    this.room.bubble(session, `Is your code ${code}? 🤔`)
+    // Both players see the guess land, then (after the suspense) each digit's answer.
+    this.tell({ t: 'guessed', by: i, code })
     this.sync(now)
 
     const token = this.token
     // Room clock: cleared automatically if the room is disposed meanwhile.
     this.room.clock.setTimeout(() => {
       if (this.token !== token || this.phase !== 'guessing') return
-      this.resolveGuess(i, n, Date.now())
+      this.resolveGuess(i, code, Date.now())
     }, T.guessReveal * 1000)
   }
 
-  resolveGuess(i, n, now) {
+  resolveGuess(i, code, now) {
     const o = 1 - i
     const secret = this.secrets[o]
-    if (n === secret) {
-      this.history[i].push({ n, answer: 'correct' })
-      this.tell({ t: 'answer', by: i, n, answer: 'correct' })
+    let hits = ''
+    for (let p = 0; p < LEN; p += 1) {
+      if (code[p] === secret[p]) {
+        hits += '1'
+        this.known[i][p] = code[p]
+      } else {
+        hits += '0'
+        if (!this.missed[i][p].includes(code[p])) this.missed[i][p] += code[p]
+      }
+    }
+    this.history[i].push({ code, hits })
+    this.tell({ t: 'answer', by: i, code, hits })
+    if (hits === ALL_HITS) {
       this.finish(i, o, 'guessed', now)
       return
     }
-    const answer = n < secret ? 'higher' : 'lower'
-    this.history[i].push({ n, answer })
-    this.tell({ t: 'answer', by: i, n, answer })
-    if (answer === 'higher') {
-      this.ranges[i][0] = n + 1
-      this.room.bubble(this.seats[o], 'Higher 👆')
-    } else {
-      this.ranges[i][1] = n - 1
-      this.room.bubble(this.seats[o], 'Lower 👇')
-    }
+
+    const right = hits.split('1').length - 1
+    const mask = maskOf(this.known[i])
+    this.room.bubble(this.seats[o], right === 0 ? `Nope! ❌ ${mask}` : `${right} right! 😬 ${mask}`)
     this.turn = o
     this.beginTurn(now)
   }
@@ -176,29 +187,27 @@ class Table {
     this.seats.forEach((s, i) => s?.send('duel', { t, mine: i === by, ...rest }))
   }
 
-  /** Paid power-ups. Returns an error string, or null on success. */
+  /**
+   * Paid power-ups. The only one is Reveal Digit ('hint'): it cracks one random
+   * digit that is still unknown, once per player per match. Returns an error
+   * string, or null on success.
+   */
   power(session, kind, now) {
     const i = this.seatOf(session)
     if (i < 0 || this.phase !== 'guessing') return 'Power-ups work during guessing'
     const cost = DATA.powers[kind]
     if (cost === undefined) return 'Unknown power-up'
+    if (this.hintUsed[i]) return 'Reveal Digit is once per match'
     if (session.profile.cash < cost) return `You need $${cost}`
 
-    if (kind === 'hint') {
-      const [lo, hi] = this.ranges[i]
-      const width = hi - lo + 1
-      if (width <= 3) return 'Already narrowed down!'
-      const secret = this.secrets[1 - i]
-      const span = Math.max(3, Math.ceil(width / 4))
-      const start = randomInt(Math.max(lo, secret - span + 1), Math.min(secret, hi - span + 1))
-      this.ranges[i] = [start, start + span - 1]
-      session.toast(`Hint: it's between ${start} and ${start + span - 1}`)
-    } else if (kind === 'reveal') {
-      if (this.revealed[i]) return 'Already revealed'
-      this.revealed[i] = true
-      session.toast(`Their number is ${this.secrets[1 - i]} 👀`)
-    }
-    if (kind === 'hint') this.room.questEvent(session, 'hint', now)
+    const open = []
+    this.known[i].forEach((d, p) => d === null && open.push(p))
+    if (open.length <= 1) return 'Only one digit left, you got this!'
+    const p = open[randomInt(0, open.length - 1)]
+    this.known[i][p] = this.secrets[1 - i][p]
+    this.hintUsed[i] = true
+    session.toast(`Digit ${p + 1} is ${this.known[i][p]} 🔓`)
+    this.room.questEvent(session, 'hint', now)
 
     session.profile.cash -= cost
     session.pushProfile(now)
@@ -238,16 +247,20 @@ class Table {
     if (winner) reward = this.room.recordWin(winner, this.guesses[w], now)
     let consolation = 0
     if (loser) consolation = this.room.recordLoss(loser, now, reason)
-    if (loser) this.room.bubble(loser, 'NOOO! 💀')
+    // Quitting a duel under way (or disconnecting for good) pays the opponent.
+    const forfeit = reason === 'forfeit' && loser && winner ? this.room.payForfeit(loser, winner, now) : 0
+    if (loser) this.room.bubble(loser, reason === 'forfeit' ? 'I quit 🏳️' : 'NOOO! 💀')
     if (winner) this.room.bubble(winner, reason === 'forfeit' ? 'GG 👍' : 'Got it! 😎')
 
     this.room.broadcast('result', {
       table: this.id,
       winner: winner?.id ?? null,
       loser: loser?.id ?? null,
-      numbers: [...this.secrets],
+      codes: [...this.secrets],
       reward,
       consolation,
+      /** Cash the quitter paid the winner (reason 'forfeit'). */
+      forfeit,
       reason,
     })
     this.sync(now)
@@ -274,8 +287,8 @@ class Table {
       // Too slow to choose: the server chooses for you.
       this.secrets.forEach((s, i) => {
         if (s === null) {
-          this.secrets[i] = randomInt(MIN, MAX)
-          this.seats[i]?.toast(`Out of time! Your number is ${this.secrets[i]}`)
+          this.secrets[i] = randomCode()
+          this.seats[i]?.toast(`Out of time! Your code is ${this.secrets[i]}`)
         }
       })
       this.startGuessing(now)
@@ -304,8 +317,13 @@ class Table {
       seat: i,
       phase: this.phase,
       endsInMs: Math.max(0, this.endsAt - now),
-      myNumber: this.secrets[i],
-      range: [...this.ranges[i]],
+      myCode: this.secrets[i],
+      /** Their code as far as this player has cracked it: a digit or null per slot. */
+      known: [...this.known[i]],
+      /** Digits ruled out at each slot of their code, e.g. ['38', '', ...]. */
+      missed: [...this.missed[i]],
+      /** Which slots of this player's own code the opponent has cracked. */
+      theirKnown: this.known[o].map((d) => d !== null),
       myTurn: this.phase === 'guessing' && this.turn === i && !this.pending,
       theirTurn: this.phase === 'guessing' && this.turn === o,
       pending: this.pending,
@@ -313,7 +331,7 @@ class Table {
       myHistory: this.history[i],
       theirHistory: this.history[o],
       won: this.phase === 'ended' && this.winner === i,
-      revealed: this.revealed[i] ? this.secrets[o] : null,
+      hintUsed: this.hintUsed[i],
       opponent: this.seats[o]?.id ?? null,
       opponentReady: this.secrets[o] !== null,
     }

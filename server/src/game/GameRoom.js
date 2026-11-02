@@ -21,6 +21,8 @@ const REPLACED = 4100
 
 /** profile id -> live session, across every room in this process. */
 const liveByProfile = new Map()
+/** Every room open in this process, for the shutdown drain. */
+const liveRooms = new Set()
 
 /**
  * One game server: up to 20 players sharing the island and its ten tables.
@@ -39,6 +41,9 @@ class GameRoom extends Room {
     /** session id -> Session, including players mid-reconnect. */
     this.sessions = new Map()
     this.lastBoard = ''
+    /** Set while this pod shuts down: no new duels start (see GameRoom.drain). */
+    this.draining = false
+    liveRooms.add(this)
 
     this.tables = DATA.tables.map((def) => {
       const state = new TableState()
@@ -125,6 +130,28 @@ class GameRoom extends Room {
     if (liveByProfile.get(session.profile.id) === session) liveByProfile.delete(session.profile.id)
   }
 
+  onDispose() {
+    liveRooms.delete(this)
+  }
+
+  /**
+   * The pod is shutting down: stop seating new duels in every room and tell
+   * everyone. Duels already under way play on (see duelsInProgress).
+   */
+  static drain() {
+    for (const room of liveRooms) {
+      room.draining = true
+      room.broadcast('toast', { text: '🔧 Server update! Finish your duel, then you move to a fresh server' })
+    }
+  }
+
+  /** Tables in this process with a duel counting down, being played, or showing its result. */
+  static duelsInProgress() {
+    let count = 0
+    for (const room of liveRooms) for (const table of room.tables) if (table.phase !== 'waiting') count += 1
+    return count
+  }
+
   onUncaughtException(error, methodName) {
     console.error(`[game] room ${this.roomId} ${methodName} failed:`, error)
   }
@@ -196,7 +223,7 @@ class GameRoom extends Room {
     p.bestStreak = Math.max(p.bestStreak, p.streak)
     profiles.addQuestEvent(p, 'play', 1, now)
     profiles.addQuestEvent(p, 'win', 1, now)
-    if (guesses <= 3) profiles.addQuestEvent(p, 'quickwin', 1, now)
+    if (guesses <= DATA.quickWinGuesses) profiles.addQuestEvent(p, 'quickwin', 1, now)
     if (p.streak >= 3) profiles.addQuestEvent(p, 'streak3', 1, now)
 
     // Win-streak milestones pay a bonus, announced to the whole server.
@@ -230,6 +257,22 @@ class GameRoom extends Room {
       const title = DATA.titles.find((t) => t.level === level)
       session.send('levelUp', { level, reward, title: title?.name ?? null })
     }
+  }
+
+  /**
+   * A player quit a duel under way: they pay the winner DATA.forfeitPenalty, or
+   * whatever cash they have if it is less (never below $0). Returns the amount paid.
+   */
+  payForfeit(loser, winner, now) {
+    const amount = Math.min(DATA.forfeitPenalty, Math.max(0, loser.profile.cash))
+    if (amount <= 0) return 0
+    loser.profile.cash -= amount
+    profiles.markDirty(loser.profile)
+    loser.pushProfile(now)
+    winner.profile.cash += amount
+    profiles.markDirty(winner.profile)
+    winner.pushProfile(now)
+    return amount
   }
 
   /**

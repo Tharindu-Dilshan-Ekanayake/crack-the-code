@@ -5,6 +5,7 @@ import { boxityEnv } from '../bloxity/env'
 import { loadEmoteCatalog, onPlatformEvent, platform } from '../bloxity/platform'
 import { DATA, seatPosition, SPAWN } from '../game/layout'
 import { getSettings } from '../game/quality'
+import { FLIP_STEP_MS, FLIP_TOTAL_MS, isCracked } from '../ui/code'
 import { useGame } from './gameStore'
 import {
   bubbles,
@@ -39,8 +40,8 @@ const HOSTING_ID = import.meta.env.VITE_BLOXITY_HOSTING_ID || ''
 const POS_INTERVAL_MS = 100
 const HEARTBEAT_MS = 1000
 const LOSS_HIDE_MS = 2200
-/** How long the Higher / Lower answer stays on screen. */
-const REVEAL_HOLD_MS = 1700
+/** How long an answered guess stays on screen once its tiles have all flipped. */
+const REVEAL_HOLD_MS = 1300
 /** A cold start can take ~45 s; stop retrying after this long without a room. */
 const GIVE_UP_MS = 60000
 /** Players already in the room when we join get playerInRoom, later ones playerJoined. */
@@ -461,7 +462,7 @@ function playToastSound(text) {
   if (/not enough|need \$|busy|full|walk closer|already|too slow|out of time/i.test(text)) sfx.error()
   else if (/bought|unlocked|claimed/i.test(text)) sfx.buy()
   else if (/quest complete|gift|reward|streak/i.test(text)) sfx.reward()
-  else if (/hint|their number is/i.test(text)) sfx.turn()
+  else if (/digit \d is/i.test(text)) sfx.turn()
 }
 
 const handlers = {
@@ -487,7 +488,8 @@ const handlers = {
       if (next.phase === 'choosing' && prev.phase !== 'choosing') sfx.go()
       if (next.myTurn && !prev.myTurn) sfx.turn()
     }
-    useGame.setState({ match: next })
+    // A "Quit the duel?" dialog only makes sense while that duel is being played.
+    useGame.setState({ match: next, ...(next?.phase !== 'guessing' && { quitConfirm: false }) })
   },
 
   /** Lost a duel: back to the lobby spawn point, visible again. */
@@ -503,18 +505,17 @@ const handlers = {
     useGame.setState({ profile: withProfileDeadlines(msg.profile) })
   },
 
-  /** A guess landing, then its Higher / Lower answer, for the reveal card. */
+  /** A guess landing, then each digit's right / wrong answer, for the reveal card. */
   duel(msg) {
     const now = Date.now()
     if (msg.t === 'guessed') {
       sfx.drum()
-      useGame.setState({ reveal: { mine: msg.mine, n: msg.n, answer: null, until: now + 5000 } })
+      useGame.setState({ reveal: { mine: msg.mine, code: msg.code, hits: null, until: now + 5000 } })
     } else if (msg.t === 'answer') {
-      if (msg.answer === 'higher') sfx.higher()
-      else if (msg.answer === 'lower') sfx.lower()
-      // A correct guess hands over to the result banner quickly.
-      const hold = msg.answer === 'correct' ? 900 : REVEAL_HOLD_MS
-      useGame.setState({ reveal: { mine: msg.mine, n: msg.n, answer: msg.answer, until: now + hold } })
+      sfx.flips(msg.hits, FLIP_STEP_MS / 1000)
+      // A cracked code hands over to the result banner soon after the last flip.
+      const hold = FLIP_TOTAL_MS + (isCracked(msg.hits) ? 500 : REVEAL_HOLD_MS)
+      useGame.setState({ reveal: { mine: msg.mine, code: msg.code, hits: msg.hits, until: now + hold } })
     }
   },
 
@@ -568,7 +569,9 @@ const handlers = {
         result: {
           win,
           reward: win ? msg.reward : msg.consolation || 0,
-          theirNumber: msg.numbers[1 - mySeat],
+          /** Cash the quitter paid the winner. */
+          forfeit: msg.forfeit || 0,
+          theirCode: msg.codes[1 - mySeat],
           reason: msg.reason,
           until: now + 3800,
         },

@@ -143,9 +143,9 @@ class Session {
       case 'leave':
         return this.seat?.table.leave(this, now)
       case 'pick':
-        return this.seat?.table.pick(this, msg.n, now)
+        return this.seat?.table.pick(this, msg.code, now)
       case 'guess':
-        return this.seat?.table.guess(this, msg.n, now)
+        return this.seat?.table.guess(this, msg.code, now)
       case 'power': {
         const err = this.seat ? this.seat.table.power(this, msg.kind, now) : 'Sit at a table first'
         if (err) this.toast(err)

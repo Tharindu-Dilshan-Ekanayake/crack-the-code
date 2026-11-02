@@ -1,6 +1,6 @@
 {
   "bloxity": {
-    "gameSlug": "guess-my-number",
+    "gameSlug": "crack-the-code",
     "roomName": "game",
     "leaderboards": [
       {
@@ -38,13 +38,13 @@
     ]
   },
   "roomSize": 20,
-  "numberMin": 1,
-  "numberMax": 100,
+  "codeLength": 6,
+  "quickWinGuesses": 6,
   "winReward": 200,
   "timing": {
     "countdown": 3,
-    "choose": 20,
-    "turn": 15,
+    "choose": 25,
+    "turn": 20,
     "results": 4,
     "guessReveal": 1.2,
     "loserRespawn": 2
@@ -200,14 +200,14 @@
   "emotes": [
     {
       "id": "higher",
-      "label": "HIGHER",
-      "icon": "⬆️",
+      "label": "SO CLOSE",
+      "icon": "🤏",
       "price": 0
     },
     {
       "id": "lower",
-      "label": "LOWER",
-      "icon": "⬇️",
+      "label": "NOPE",
+      "icon": "❌",
       "price": 0
     },
     {
@@ -339,8 +339,7 @@
     ]
   },
   "powers": {
-    "hint": 150,
-    "reveal": 600
+    "hint": 250
   },
   "quests": [
     {
@@ -373,7 +372,7 @@
     },
     {
       "id": "quickwin",
-      "label": "Win Within 3 Guesses",
+      "label": "Win Within 6 Guesses",
       "event": "quickwin",
       "goal": 1,
       "reward": 700
@@ -394,7 +393,7 @@
     },
     {
       "id": "hint1",
-      "label": "Use a Hint",
+      "label": "Reveal a Digit",
       "event": "hint",
       "goal": 1,
       "reward": 200
@@ -475,6 +474,7 @@
     "10": 1000
   },
   "lossReward": 25,
+  "forfeitPenalty": 500,
   "xp": {
     "win": 40,
     "loss": 15,
@@ -486,13 +486,13 @@
   "titles": [
     {
       "id": "t_rookie",
-      "name": "Rookie Guesser",
+      "name": "Rookie Cracker",
       "color": "#c8d0dc",
       "level": 5
     },
     {
       "id": "t_ninja",
-      "name": "Number Ninja",
+      "name": "Code Ninja",
       "color": "#5cff5c",
       "level": 10
     },
@@ -504,7 +504,7 @@
     },
     {
       "id": "t_master",
-      "name": "Guess Master",
+      "name": "Vault Master",
       "color": "#ffb21e",
       "level": 35
     },
@@ -530,7 +530,7 @@
     },
     {
       "id": "t_pro",
-      "name": "Higher Lower Pro",
+      "name": "Code Breaker",
       "color": "#2f9bff",
       "price": 4000,
       "rarity": "rare"
