@@ -48,6 +48,8 @@ const GIVE_UP_MS = 60000
 const INITIAL_SYNC_MS = 1500
 /** The server's close code when this account joined from another window. */
 const KICKED_REPLACED = 4100
+/** The server's close code for a player removed for being away. */
+const KICKED_AFK = 4101
 /** Consented leave (we called room.leave()). */
 const CONSENTED = 4000
 
@@ -297,8 +299,8 @@ function attach(r) {
     clearInterval(posTimer)
     platform.updateRoom('')
     resetWorld()
-    useGame.setState({ status: 'offline' })
-    if (code === KICKED_REPLACED || code === CONSENTED) return
+    useGame.setState({ status: code === KICKED_AFK ? 'kicked' : 'offline' })
+    if (code === KICKED_REPLACED || code === KICKED_AFK || code === CONSENTED) return
     // Closed unexpectedly (e.g. its pod is being replaced): resolve again and rejoin.
     scheduleRejoin()
   })
@@ -461,7 +463,7 @@ function playToastSound(text) {
   if (/not enough|need \$|busy|full|walk closer|already|too slow|out of time/i.test(text)) sfx.error()
   else if (/bought|unlocked|claimed/i.test(text)) sfx.buy()
   else if (/quest complete|gift|reward|streak/i.test(text)) sfx.reward()
-  else if (/digit \d is/i.test(text)) sfx.turn()
+  else if (/digit \d is|still there/i.test(text)) sfx.turn()
 }
 
 const handlers = {

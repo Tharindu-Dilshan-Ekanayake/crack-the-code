@@ -10,7 +10,7 @@ import { create } from 'zustand'
 let toastId = 0
 
 export const useGame = create((set, get) => ({
-  /** 'connecting' | 'online' | 'offline' */
+  /** 'connecting' | 'online' | 'offline' | 'failed' | 'kicked' (removed for being away) */
   status: 'connecting',
   selfId: null,
   roomId: null,

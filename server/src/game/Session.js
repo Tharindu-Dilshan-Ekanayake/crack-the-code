@@ -68,6 +68,10 @@ class Session {
     this.seat = null
     this.lastEmoteAt = 0
     this.lastAnimAt = 0
+    /** Last time the player really did something (moved, tapped, played), epoch ms. */
+    this.lastActiveAt = now
+    /** True once the "still there?" warning went out, until they do something. */
+    this.afkWarned = false
     /** Verified Bloxity account id, or '' for a guest. */
     this.userId = identity.userId
 
@@ -132,12 +136,24 @@ class Session {
     profiles.markDirty(this.profile)
   }
 
+  /** Marks the player as present: resets the AFK clock. */
+  touch(now) {
+    this.lastActiveAt = now
+    this.afkWarned = false
+  }
+
   /** Routes one client message. `msg` is untrusted. */
   handle(type, msg, now) {
     msg = msg && typeof msg === 'object' ? msg : {}
+    // Position packets (idle ones are a once-a-second heartbeat) and the automatic
+    // avatar sync say nothing about a person being there; everything else does.
+    if (type !== 'pos' && type !== 'avatar') this.touch(now)
     switch (type) {
       case 'pos':
-        return this.onPos(msg)
+        return this.onPos(msg, now)
+      case 'active':
+        // Sent by the client on key presses and taps; touch() above is all it does.
+        return undefined
       case 'sit':
         return this.onSit(msg, now)
       case 'leave':
@@ -172,12 +188,16 @@ class Session {
     }
   }
 
-  onPos(msg) {
+  onPos(msg, now) {
     if (this.seat) return
     const p = this.player
-    p.x = clamp(finite(msg.x, p.x), -HALF, HALF)
-    p.y = clamp(finite(msg.y, 0), -5, 20)
-    p.z = clamp(finite(msg.z, p.z), -HALF, HALF)
+    const x = clamp(finite(msg.x, p.x), -HALF, HALF)
+    const y = clamp(finite(msg.y, 0), -5, 20)
+    const z = clamp(finite(msg.z, p.z), -HALF, HALF)
+    if (Math.hypot(x - p.x, z - p.z) > 0.05 || Math.abs(y - p.y) > 0.05) this.touch(now)
+    p.x = x
+    p.y = y
+    p.z = z
     p.ry = finite(msg.ry)
     p.s = clamp(finite(msg.s), 0, 20)
     p.g = Boolean(msg.g)

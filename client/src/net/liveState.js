@@ -30,6 +30,12 @@ export const SELF_ANCHOR = 'self'
 /** Each avatar's visual group (seated/dance offsets included), for halos: id -> Object3D. */
 export const avatarAnchors = new Map()
 
+/**
+ * Every remote player's avatar slot, for the crowd LOD (RemotePlayers): id ->
+ * { group, visual, full, active, hidden, isFull, dist, headRef, costRef, tint }.
+ */
+export const avatarRegistry = new Map()
+
 /** Bloxity emotes playing on remote players: id -> { clip, start }. */
 export const remoteEmotes = new Map()
 
