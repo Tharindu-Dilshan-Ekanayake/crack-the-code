@@ -475,6 +475,10 @@
   },
   "lossReward": 25,
   "forfeitPenalty": 500,
+  "afk": {
+    "warnSec": 60,
+    "kickSec": 90
+  },
   "xp": {
     "win": 40,
     "loss": 15,

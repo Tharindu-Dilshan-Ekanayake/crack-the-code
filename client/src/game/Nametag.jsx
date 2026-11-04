@@ -5,11 +5,13 @@ import { Vector3 } from 'three'
 import { useGame } from '../net/gameStore'
 import { bubbles, localPlayer } from '../net/liveState'
 import { Label } from './labels'
-import { titleById } from './layout'
+import { PLAYER_HEIGHT, titleById } from './layout'
 import { getSettings } from './quality'
 import { useDisposable } from './useDisposable'
 
-const NAME_Y = 2.05
+/** Gap between the top of the head (hair and hats included) and the bottom of the tag. */
+const NAME_GAP = 0.22
+const NAME_Y = PLAYER_HEIGHT + NAME_GAP
 const _world = new Vector3()
 
 /**
@@ -18,8 +20,10 @@ const _world = new Vector3()
  * one redraws a canvas but never re-renders React.
  *
  * Place inside the player's group; distance is measured from the tag's world position.
+ * `headRef.current` is the avatar's height (see PlayerAvatar): the tag rides above it,
+ * so it clears tall hats, big heads and tall proportions instead of sitting inside them.
  */
-export function Nametag({ id, name, streak, title = '', isSelf = false, gate = null }) {
+export function Nametag({ id, name, streak, title = '', isSelf = false, gate = null, headRef = null }) {
   const ref = useRef(null)
   const seenVersion = useRef(0)
   const labels = useDisposable(
@@ -44,6 +48,9 @@ export function Nametag({ id, name, streak, title = '', isSelf = false, gate = n
   useFrame(() => {
     const self = ref.current
     if (!self) return
+
+    const nameY = (headRef?.current ?? PLAYER_HEIGHT) + NAME_GAP
+    labels.name.sprite.position.y = nameY
 
     const b = bubbles.get(id)
     if (b && b.version !== seenVersion.current) {
@@ -73,7 +80,7 @@ export function Nametag({ id, name, streak, title = '', isSelf = false, gate = n
     labels.bubble.sprite.visible = Boolean(
       b && b.until > Date.now() && (allowed || d < 6) && d < limit * 1.5 && !labels.bubble.empty,
     )
-    labels.bubble.sprite.position.y = NAME_Y + labels.name.sprite.scale.y + 0.06
+    labels.bubble.sprite.position.y = nameY + labels.name.sprite.scale.y + 0.06
   })
 
   return (

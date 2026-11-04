@@ -28,7 +28,11 @@ import {
   collectRig,
   updateFollowers,
 } from './avatarRig'
+import { sampleTints } from './avatarTint'
 import { mergeBody, unmergeBody } from './mergeBody'
+
+const _headBox = new Box3()
+const _feet = new Vector3()
 
 /**
  * Keeps the avatar breathing when it is rendered outside the game (a menu preview,
@@ -106,7 +110,15 @@ function useCustomCharacter(equipped) {
  *   far bigger than a metric-scale physics capsule, so the model is measured and
  *   rescaled rather than trusted at native size.
  *   `motionRef.current.emote` ({ clip, start }) plays a Bloxity emote; it gets
- *   `done: true` when a non-looping clip finishes.
+ *   `done: true` when a non-looping clip finishes. `motionRef.current.step` (2, 3...)
+ *   animates only every 2nd, 3rd... frame (far-away avatars).
+ *   `headRef.current` is kept at the height of the top of the avatar (hair, hats and
+ *   proportions included) in the game's units, so tags and halos sit above the head.
+ *   `costRef.current` is kept at `{ near, far }`, the draw calls this avatar costs when
+ *   shown up close, and without its hand and shoe items (hidden when
+ *   `motionRef.current.detail` is false, i.e. far away). `tintRef.current`
+ *   (Float32Array) is filled with its head, torso, arm and leg colours for the crowd
+ *   stand-in.
  */
 export const PlayerAvatar = forwardRef(function PlayerAvatar(
   {
@@ -117,6 +129,9 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
     proportions: proportionsProp,
     silent = false,
     castShadow = true,
+    headRef,
+    costRef,
+    tintRef,
     ...props
   },
   ref,
@@ -183,6 +198,10 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
 
   /** Hand and shoe items, moved onto their bones every frame. */
   const followers = useRef([])
+  /** Measures the avatar's height (see headRef); set while an assembled avatar is up. */
+  const measure = useRef(null)
+  const frameCount = useRef(0)
+  const detailShown = useRef(true)
 
   // --- Assemble equipped cosmetics --------------------------------------------
   useEffect(() => {
@@ -191,6 +210,7 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
     // be removed rather than stacking up.
     const attached = []
     let merged = null
+    let skinTexture = null
     followers.current = []
 
     if (!silent) game.loadingStep('Loading avatar…')
@@ -245,6 +265,7 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
           try {
             if (result.kind === 'skin') {
               applySkin(rig, result.texture)
+              skinTexture = result.texture
             } else if (result.kind === 'charTexture') {
               if (result.texture) {
                 for (const mesh of rig.skinnedMeshes) {
@@ -294,6 +315,40 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
           }
         }
 
+        // What the finished avatar costs to draw, how tall it stands, what colour it is.
+        measure.current = () => {
+          const root = rootRef.current
+          if (!root || !headRef) return
+          // Rest pose with the current proportions, so an animation frame or a seated
+          // pose can't skew the measurement (the next frame animates over it again).
+          applyProportions(rig, proportionsRef.current)
+          root.updateMatrixWorld(true)
+          _headBox.setFromObject(rig.root, true)
+          const top = _headBox.max.y - root.parent.getWorldPosition(_feet).y
+          if (Number.isFinite(top) && top > 0.8 && top < 8) headRef.current = top
+        }
+        try {
+          if (costRef) {
+            const meshesIn = (objects) => {
+              let n = 0
+              for (const object of objects) {
+                object.traverse((child) => {
+                  if (child.isMesh) n += 1
+                })
+              }
+              return n
+            }
+            const near = Math.max(1, (merged ? 1 : rig.skinnedMeshes.length) + meshesIn(attached))
+            // Hands and shoes are the ones hidden at a distance (followers).
+            const far = Math.max(1, near - meshesIn(followers.current.map((f) => f.object)))
+            costRef.current = { near, far }
+          }
+          if (tintRef && !custom) sampleTints(rig, skinTexture, tintRef.current)
+          measure.current()
+        } catch (err) {
+          console.warn('[avatar] could not measure avatar', err)
+        }
+
         setAssembled(true)
       })
       .catch((err) => {
@@ -303,6 +358,7 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
 
     return () => {
       cancelled = true
+      measure.current = null
       unmergeBody(merged, rig.skinnedMeshes)
       followers.current = []
       for (const object of attached) {
@@ -313,6 +369,8 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
         })
       }
     }
+    // headRef, costRef and tintRef are refs: reading them never needs a rebuild.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rig, custom, baseRest, equipped, game, silent, castShadow])
 
   // --- Proportions -------------------------------------------------------------
@@ -322,6 +380,8 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
   const proportionsRef = useRef(proportions)
   useEffect(() => {
     proportionsRef.current = custom ? DEFAULT_PROPORTIONS : proportions
+    // A new height or head size changes where the name goes.
+    measure.current?.()
   }, [custom, proportions])
 
   useFrame((_state, delta) => {
@@ -329,6 +389,17 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
     if (!isShown(rootRef.current)) return
     try {
       const motion = motionRef?.current ?? fallbackMotion(delta)
+      // Hands and shoes are too small to see from far away: not drawn there.
+      const detail = motion.detail !== false
+      if (detail !== detailShown.current) {
+        detailShown.current = detail
+        for (const f of followers.current) f.object.visible = detail
+      }
+      // Far-away avatars animate every few frames: nobody sees the difference.
+      if (motion.step > 1) {
+        frameCount.current = (frameCount.current + 1) % motion.step
+        if (frameCount.current) return
+      }
       // Order matters: proportions reset every bone to its rest pose, the animation
       // rotates on top of that clean base, and an emote blends over both.
       applyProportions(rig, proportionsRef.current)

@@ -6,8 +6,13 @@ import { usePlatform } from '../bloxity/platform'
  * Graphics presets. Every visual feature reads one of these values before it
  * renders anything; LOW is the floor for low-end phones.
  *
- * maxFullAvatars - remote players drawn as full skinned avatars (6+ draw calls
- *                  each); the rest become one instanced low-poly crowd.
+ * maxFullAvatars - most remote players drawn as full skinned avatars at once.
+ * avatarBudget   - draw calls all full remote avatars may use together. An avatar
+ *                  costs 1 for its body plus 1 per worn item mesh, so plain avatars
+ *                  are cheap and heavily dressed ones use more of the budget.
+ * fullDistance   - beyond this (world units) a player is a crowd stand-in whatever
+ *                  the budget. Players inside it are shown nearest first.
+ * The rest become one instanced low-poly crowd, coloured like each player.
  */
 export const PRESETS = {
   low: {
@@ -15,11 +20,13 @@ export const PRESETS = {
     shadows: false,
     shadowMapSize: 0,
     particles: false,
-    maxFullAvatars: 3,
+    maxFullAvatars: 19,
+    avatarBudget: 30,
+    fullDistance: 26,
     /** Name tags drawn at once (nearest players), and table signs (nearest tables). */
-    maxNames: 4,
+    maxNames: 6,
     maxTableSigns: 4,
-    nameDistance: 18,
+    nameDistance: 24,
     labelDistance: 22,
     viewDistance: 140,
     clouds: 12,
@@ -31,10 +38,12 @@ export const PRESETS = {
     shadows: true,
     shadowMapSize: 1024,
     particles: true,
-    maxFullAvatars: 6,
-    maxNames: 10,
+    maxFullAvatars: 19,
+    avatarBudget: 52,
+    fullDistance: 36,
+    maxNames: 12,
     maxTableSigns: 6,
-    nameDistance: 28,
+    nameDistance: 30,
     labelDistance: 30,
     viewDistance: 260,
     clouds: 12,
@@ -46,8 +55,10 @@ export const PRESETS = {
     shadows: true,
     shadowMapSize: 2048,
     particles: true,
-    maxFullAvatars: 10,
-    maxNames: 16,
+    maxFullAvatars: 19,
+    avatarBudget: 56,
+    fullDistance: 50,
+    maxNames: 18,
     maxTableSigns: 10,
     nameDistance: 40,
     labelDistance: 38,

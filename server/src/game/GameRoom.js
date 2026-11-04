@@ -18,6 +18,10 @@ const LEADERBOARD_PUSH_MS = 15000
 const PLAYTIME_TICK_MS = 30000
 /** Close code for a session replaced by the same account joining from elsewhere. */
 const REPLACED = 4100
+/** Close code for a player removed for being away from the keyboard. */
+const AFK_REMOVED = 4101
+/** How often idle players are looked for. */
+const AFK_CHECK_MS = 2000
 
 /** profile id -> live session, across every room in this process. */
 const liveByProfile = new Map()
@@ -61,6 +65,7 @@ class GameRoom extends Room {
       const now = Date.now()
       for (const table of this.tables) table.tick(now)
     }, TICK_MS)
+    this.clock.setInterval(() => this.checkAfk(Date.now()), AFK_CHECK_MS)
     this.clock.setInterval(() => this.pushLeaderboard(), LEADERBOARD_PUSH_MS)
     this.lastPlaytimeTick = Date.now()
     this.clock.setInterval(() => this.tickPlaytime(), PLAYTIME_TICK_MS)
@@ -157,10 +162,35 @@ class GameRoom extends Room {
   }
 
   /** Disconnects a session, including one that is mid-reconnect. */
-  kick(session) {
+  kick(session, code = REPLACED) {
     session.kicked = true
     if (session.reconnection) session.reconnection.reject(new Error('replaced'))
-    else session.client.leave(REPLACED)
+    else session.client.leave(code)
+  }
+
+  /**
+   * Frees the slots of players who are not playing. After DATA.afk.warnSec without
+   * moving, tapping or playing they get a "still there?" toast; after kickSec they
+   * are removed, which opens their slot to a waiting player. Players in the middle
+   * of a duel are left to the duel's own turn timers (two missed turns lose it); the
+   * check catches them right after.
+   */
+  checkAfk(now) {
+    const warnMs = DATA.afk.warnSec * 1000
+    const kickMs = DATA.afk.kickSec * 1000
+    for (const session of this.sessions.values()) {
+      if (session.kicked || session.reconnection) continue
+      const table = session.seat?.table
+      if (table && ['countdown', 'choosing', 'guessing'].includes(table.phase)) continue
+
+      const idle = now - session.lastActiveAt
+      if (idle >= kickMs) {
+        this.kick(session, AFK_REMOVED)
+      } else if (idle >= warnMs && !session.afkWarned) {
+        session.afkWarned = true
+        session.toast('💤 Still there? Move or tap to stay in the game')
+      }
+    }
   }
 
   sendWelcome(session, now) {

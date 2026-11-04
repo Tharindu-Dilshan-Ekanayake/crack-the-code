@@ -75,6 +75,8 @@ export function Player({ onAvatarReady }) {
   const groupRef = useRef(null)
   const visualRef = useRef(null)
   const tagRef = useRef(null)
+  /** Height of the top of this avatar's head, kept up to date by PlayerAvatar. */
+  const headRef = useRef(PLAYER_HEIGHT)
   const atSeat = useRef(false)
   const keys = useKeyboard()
   const velocity = useRef({ x: 0, y: 0, z: 0 })
@@ -87,6 +89,7 @@ export function Player({ onAvatarReady }) {
   // Where this player's halo floats (see Halos).
   useLayoutEffect(() => {
     avatarAnchors.set(SELF_ANCHOR, visualRef.current)
+    visualRef.current.userData.headRef = headRef
     return () => avatarAnchors.delete(SELF_ANCHOR)
   }, [])
 
@@ -199,10 +202,10 @@ export function Player({ onAvatarReady }) {
   return (
     <group ref={groupRef} position={localPlayer.position.toArray()}>
       <group ref={visualRef} rotation={[0, localPlayer.ry, 0]}>
-        <PlayerAvatar onReady={onAvatarReady} targetHeight={PLAYER_HEIGHT} motionRef={motionRef} />
+        <PlayerAvatar onReady={onAvatarReady} targetHeight={PLAYER_HEIGHT} motionRef={motionRef} headRef={headRef} />
       </group>
       <group ref={tagRef}>
-        {selfId && <Nametag id={selfId} name={name || 'You'} streak={streak} title={title} isSelf />}
+        {selfId && <Nametag id={selfId} name={name || 'You'} streak={streak} title={title} isSelf headRef={headRef} />}
       </group>
     </group>
   )

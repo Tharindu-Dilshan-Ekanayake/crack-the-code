@@ -5,6 +5,8 @@ import { platform } from '../bloxity/platform'
 import { connect, disconnect, send } from './api'
 
 const GUEST_KEY = 'gmn-guest-id'
+/** At most one "I'm here" message this often, however much the player types or taps. */
+const ACTIVE_PING_MS = 4000
 
 /**
  * A stable guest id: the Bloxity guest's id when the SDK has one (so a guest's
@@ -68,4 +70,21 @@ export function useConnection() {
   useEffect(() => {
     if (settled) send({ t: 'avatar', equipped: avatar, proportions })
   }, [settled, avatar, proportions])
+
+  // Tells the server a person is here: moving is already visible to it, but typing a
+  // code or tapping a menu is not, and idle players lose their slot (GameRoom.checkAfk).
+  useEffect(() => {
+    let last = 0
+    const ping = () => {
+      const now = Date.now()
+      if (now - last < ACTIVE_PING_MS) return
+      last = now
+      send({ t: 'active' })
+    }
+    const events = ['keydown', 'pointerdown', 'touchstart', 'wheel']
+    for (const name of events) window.addEventListener(name, ping, { passive: true })
+    return () => {
+      for (const name of events) window.removeEventListener(name, ping)
+    }
+  }, [])
 }
